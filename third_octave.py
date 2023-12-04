@@ -11,7 +11,7 @@ class ThirdOctaveTransform():
         # Third-octave band analysis weights
         self.f = []
         self.H = []
-        with open('tob_'+str(self.fLen)+'.txt') as w_file:
+        with open('./censeModels/tob_'+str(self.fLen)+'.txt') as w_file:
             for line in w_file: # = For each band
                 line = line.strip()
                 f_temp = line.split(',')

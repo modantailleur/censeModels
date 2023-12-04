@@ -125,7 +125,7 @@ class FelixInference():
             self.db_compensation = 0
         self.exp = "TVBCense_Fast0dB"
 
-        self.settings = load_settings(Path('./felix/exp_settings/', self.exp+'.yaml'))
+        self.settings = load_settings(Path('./censeModels/exp_settings/', self.exp+'.yaml'))
         modelName = get_model_name(self.settings)
 
         useCuda = torch.cuda.is_available() and not self.settings['training']['force_cpu']
@@ -147,8 +147,8 @@ class FelixInference():
             self.dec = nn.DataParallel(self.dec).cuda()
 
         # Pretrained state dict. loading
-        self.enc.load_state_dict(load_latest_model_from('./felix/'+self.settings['model']['checkpoint_dir'], modelName+'_enc', useCuda=useCuda))
-        self.dec.load_state_dict(load_latest_model_from('./felix/'+self.settings['model']['checkpoint_dir'], modelName+'_dec', useCuda=useCuda))
+        self.enc.load_state_dict(load_latest_model_from('./censeModels/'+self.settings['model']['checkpoint_dir'], modelName+'_enc', useCuda=useCuda))
+        self.dec.load_state_dict(load_latest_model_from('./censeModels/'+self.settings['model']['checkpoint_dir'], modelName+'_dec', useCuda=useCuda))
         self.dtype = dtype
         self.ltype = ltype
 

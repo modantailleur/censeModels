@@ -23,9 +23,8 @@ import pandas as pd
 import librosa
 
 if __name__ != '__main__':
-    sys.path.append('./felix/')
-    from felix.third_octave import ThirdOctaveTransform
-
+    sys.path.append('./censeModels/')
+    from censeModels.third_octave import ThirdOctaveTransform
 else:
     from third_octave import ThirdOctaveTransform
 

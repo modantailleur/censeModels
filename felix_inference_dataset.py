@@ -48,6 +48,77 @@ class CenseDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.len_data
 
+class FelixInference():
+    def __init__(self, dataset=None):
+        self.tho_tr = ThirdOctaveTransform(sr=32000, fLen=4096, hLen=4000)
+        self.dataset = dataset
+
+        if self.dataset == 'Grafic':
+            # According to felix's code, it is supposed to be 101 but it's weird and it doesn't lead to good correlations. Also tried with 0, but not better.
+            # Emppirically, +19dB seems ok.
+            # self.db_compensation = 101
+            # self.db_compensation = 0
+            self.db_compensation = 19
+        elif self.dataset == 'Lorient1k':
+            self.db_compensation = 33.96
+        elif self.dataset == 'CenseLorient':
+            self.db_compensation = 26
+        else:
+            self.db_compensation = 0
+        self.exp = "TVBCense_Fast0dB"
+
+        self.settings = load_settings(Path('./censeModels/exp_settings/', self.exp+'.yaml'))
+        modelName = get_model_name(self.settings)
+
+        useCuda = torch.cuda.is_available() and not self.settings['training']['force_cpu']
+        self.useCuda = useCuda
+        if useCuda:
+            print('Using CUDA.')
+            dtype = torch.cuda.FloatTensor
+            ltype = torch.cuda.LongTensor
+        else:
+            print('No CUDA available.')
+            dtype = torch.FloatTensor
+            ltype = torch.LongTensor
+
+        # Model init.
+        self.enc = VectorLatentEncoder(self.settings)
+        self.dec = PresPredRNN(self.settings, dtype=dtype)
+        if useCuda:
+            self.enc = nn.DataParallel(self.enc).cuda()
+            self.dec = nn.DataParallel(self.dec).cuda()
+
+        # Pretrained state dict. loading
+        self.enc.load_state_dict(load_latest_model_from('./censeModels/'+self.settings['model']['checkpoint_dir'], modelName+'_enc', useCuda=useCuda))
+        self.dec.load_state_dict(load_latest_model_from('./censeModels/'+self.settings['model']['checkpoint_dir'], modelName+'_dec', useCuda=useCuda))
+        self.dtype = dtype
+        self.ltype = ltype
+
+    def inference_from_scratch(self, file_name):
+        wav_data, sr = librosa.load(file_name, sr=32000)
+        #MT: test, to remove
+        # wav_data = librosa.util.normalize(wav_data)
+        spectral_data = self.tho_tr.wave_to_third_octave(wav_data, zeroPad=True)
+        spectral_data = spectral_data.T
+
+        #MT: normalization of third octaves
+        #spectral_data = spectral_data - np.mean(spectral_data)
+
+        #MT: added to have same third octaves as input as the ones used for training of félix's algorithm
+        spectral_data = spectral_data + 94 - 26
+        spectral_data = spectral_data + self.db_compensation
+        spectral_data = np.expand_dims(spectral_data, axis=0)
+
+        presence, scores = inference(exp=self.exp, enc=self.enc, dec=self.dec, useCuda=self.useCuda, settings=self.settings, spectral_data=spectral_data, dtype=self.dtype, ltype=self.ltype, batch_size=480)
+
+        print('XXXXXXXXXXXX CNN-TRAIN-SYNTH CLASSIFIER XXXXXXXXXXXX')
+        print(file_name)
+        to_plot = np.mean(scores, axis=0)
+        print(f'TRAFFIC: {to_plot[0]}, VOICES: {to_plot[1]}, BIRDS: {to_plot[2]}')
+
+        return(scores)
+        # return(scores, np.mean(spectral_data))
+
 #inspired from main function of inference.py
 def inference(exp, enc, dec,  useCuda, settings, spectral_data, dtype, ltype, batch_size=480, verbose=False):
 
@@ -105,88 +176,14 @@ def inference(exp, enc, dec,  useCuda, settings, spectral_data, dtype, ltype, ba
     
     return(presence, scores)
 
-class FelixInference():
-    def __init__(self, dataset=None):
-        self.tho_tr = ThirdOctaveTransform(sr=32000, fLen=4096, hLen=4000)
-        self.dataset = dataset
+# def detection(file_name):
+#     tho_tr = ThirdOctaveTransform(sr=32000, fLen=4096, hLen=4000)
+#     wav_data, sr = librosa.load(file_name, sr=32000)
+#     spectral_data = tho_tr.wave_to_third_octave(wav_data, zeroPad=True)
+#     spectral_data = spectral_data.T
+#     spectral_data = np.expand_dims(spectral_data, axis=0)
+#     # presence, scores = inference(exp="TVBCenseSensor_Fast", spectral_data=spectral_data, batch_size=480)
+#     presence, scores = inference(exp="TVBCenseSensor_Fast", spectral_data=spectral_data, batch_size=480)
+#     #print(scores)
+#     return(scores)
 
-        if self.dataset == 'Grafic':
-            # According to felix's code, it is supposed to be 101 but it's kinda weird. Also tried with 0, but not better.
-            # I sticked to the db_compensation with global dataset normalisation
-            # self.db_compensation = 101
-            # self.db_compensation = 0
-            self.db_compensation = 19
-
-        elif self.dataset == 'Lorient1k':
-            self.db_compensation = 33.96
-        elif self.dataset == 'CenseLorient':
-            self.db_compensation = 26
-        else:
-            self.db_compensation = 0
-        self.exp = "TVBCense_Fast0dB"
-
-        self.settings = load_settings(Path('./censeModels/exp_settings/', self.exp+'.yaml'))
-        modelName = get_model_name(self.settings)
-
-        useCuda = torch.cuda.is_available() and not self.settings['training']['force_cpu']
-        self.useCuda = useCuda
-        if useCuda:
-            print('Using CUDA.')
-            dtype = torch.cuda.FloatTensor
-            ltype = torch.cuda.LongTensor
-        else:
-            print('No CUDA available.')
-            dtype = torch.FloatTensor
-            ltype = torch.LongTensor
-
-        # Model init.
-        self.enc = VectorLatentEncoder(self.settings)
-        self.dec = PresPredRNN(self.settings, dtype=dtype)
-        if useCuda:
-            self.enc = nn.DataParallel(self.enc).cuda()
-            self.dec = nn.DataParallel(self.dec).cuda()
-
-        # Pretrained state dict. loading
-        self.enc.load_state_dict(load_latest_model_from('./censeModels/'+self.settings['model']['checkpoint_dir'], modelName+'_enc', useCuda=useCuda))
-        self.dec.load_state_dict(load_latest_model_from('./censeModels/'+self.settings['model']['checkpoint_dir'], modelName+'_dec', useCuda=useCuda))
-        self.dtype = dtype
-        self.ltype = ltype
-
-    def inference_from_scratch(self, file_name):
-        #to have the same results as felix, I have to add 69.2598464521 to my third octaves
-        wav_data, sr = librosa.load(file_name, sr=32000)
-        #MT: test, to remove
-        # wav_data = librosa.util.normalize(wav_data)
-        spectral_data = self.tho_tr.wave_to_third_octave(wav_data, zeroPad=True)
-        spectral_data = spectral_data.T
-
-        #MT: normalization of third octaves
-        #spectral_data = spectral_data - np.mean(spectral_data)
-
-        #MT: added to have same third octaves as input as the ones used for training of félix's algorithm
-        # spectral_data = spectral_data + 69.2598464521
-        spectral_data = spectral_data + 94 - 26
-        spectral_data = spectral_data + self.db_compensation
-        spectral_data = np.expand_dims(spectral_data, axis=0)
-        print(spectral_data.shape)
-        #self.exp = "TVBCenseSensor_Fast"
-
-        presence, scores = inference(exp=self.exp, enc=self.enc, dec=self.dec, useCuda=self.useCuda, settings=self.settings, spectral_data=spectral_data, dtype=self.dtype, ltype=self.ltype, batch_size=480)
-
-        print('TTTTTTTTTTTtVVVVVVVVVVVVVBBBBBBBBBBBBBBB')
-        print(file_name)
-        print(np.mean(scores, axis=0))
-
-        return(scores)
-        # return(scores, np.mean(spectral_data))
-
-def detection(file_name):
-    tho_tr = ThirdOctaveTransform(sr=32000, fLen=4096, hLen=4000)
-    wav_data, sr = librosa.load(file_name, sr=32000)
-    spectral_data = tho_tr.wave_to_third_octave(wav_data, zeroPad=True)
-    spectral_data = spectral_data.T
-    spectral_data = np.expand_dims(spectral_data, axis=0)
-    # presence, scores = inference(exp="TVBCenseSensor_Fast", spectral_data=spectral_data, batch_size=480)
-    presence, scores = inference(exp="TVBCenseSensor_Fast", spectral_data=spectral_data, batch_size=480)
-    #print(scores)
-    return(scores)

@@ -56,15 +56,15 @@ class FelixInference():
         if self.dataset == 'Grafic':
             # According to felix's code, it is supposed to be 101 but it's weird and it doesn't lead to good correlations. Also tried with 0, but not better.
             # Emppirically, +19dB seems ok.
-            # self.db_compensation = 101
-            # self.db_compensation = 0
-            self.db_compensation = 19
+            # self.db_offset = 101
+            # self.db_offset = 0
+            self.db_offset = 19
         elif self.dataset == 'Lorient1k':
-            self.db_compensation = 33.96
+            self.db_offset = 33.96
         elif self.dataset == 'CenseLorient':
-            self.db_compensation = 26
+            self.db_offset = 26
         else:
-            self.db_compensation = 0
+            self.db_offset = 0
         self.exp = "TVBCense_Fast0dB"
 
         self.settings = load_settings(Path('./censeModels/exp_settings/', self.exp+'.yaml'))
@@ -106,7 +106,7 @@ class FelixInference():
 
         #MT: added to have same third octaves as input as the ones used for training of félix's algorithm
         spectral_data = spectral_data + 94 - 26
-        spectral_data = spectral_data + self.db_compensation
+        spectral_data = spectral_data + self.db_offset
         spectral_data = np.expand_dims(spectral_data, axis=0)
 
         presence, scores = inference(exp=self.exp, enc=self.enc, dec=self.dec, useCuda=self.useCuda, settings=self.settings, spectral_data=spectral_data, dtype=self.dtype, ltype=self.ltype, batch_size=480)
